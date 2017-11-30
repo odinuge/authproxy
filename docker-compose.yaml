@@ -1,0 +1,9 @@
+version: "2"
+
+services:
+  nginx:
+    image: nginx
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./nginx:/etc/nginx/conf.d/
