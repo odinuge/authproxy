@@ -4,14 +4,11 @@ import (
 	"net/http"
 	"github.com/gorilla/sessions"
 	log "github.com/getwhale/contrib/logging"
-	"fmt"
-	"encoding/base64"
 	"errors"
 	"github.com/gorilla/securecookie"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"time"
+	"github.com/coreos/go-oidc"
+	"context"
+	"text/template"
 )
 
 
@@ -21,13 +18,14 @@ type Handlers struct {
 	cookieStore *sessions.CookieStore
 	apiURL string
 	token string
+	tokenVerifier *oidc.IDTokenVerifier
 }
 
-type tokenVerify struct {
-	Token string `json:"token"`
+type Claims struct {
+	Groups []string `json:"groups"`
 }
 
-func NewHandlers(secretKey []byte, sessionCookieName string, apiUrl string, token string) (*Handlers, error) {
+func NewHandlers(secretKey []byte, sessionCookieName, apiUrl, token, oidcIssuerUrl, oidcClientID string) (*Handlers, error) {
 	if len(secretKey) < 32 {
 		return nil, errors.New("secret key needs to have a length of at least 32")
 	}
@@ -44,17 +42,22 @@ func NewHandlers(secretKey []byte, sessionCookieName string, apiUrl string, toke
 		Options: &sessions.Options{
 			Path: "/",
 			MaxAge: 86400,
+			HttpOnly: true,
 		},
 	}
 	cs.MaxAge(cs.Options.MaxAge)
 	handlers.cookieStore = cs
 
+	provider, err := oidc.NewProvider(context.Background(), oidcIssuerUrl)
+	if err != nil {
+		log.Fatal(err, "Could not create dex provider")
+	}
+	handlers.tokenVerifier = provider.Verifier(&oidc.Config{ClientID: oidcClientID})
+
 	return &handlers, nil
 }
 
 func (h *Handlers) authenticate(w http.ResponseWriter, r *http.Request) {
-	log.Info("handling authenticate request")
-
 	session, err := h.cookieStore.Get(r, h.sessionCookieName)
 	if err != nil {
 		log.Info("Could not read cookie", err)
@@ -68,67 +71,49 @@ func (h *Handlers) authenticate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if token == "" {
+	idToken, err := h.tokenVerifier.Verify(context.Background(), token)
+	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
+
+	var claims Claims
+	err = idToken.Claims(&claims)
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Permissions check
+	log.Info(claims.Groups)
+	log.Info(r.Header.Get("X-ORIGINAL-URL"))
 }
 
 func (h *Handlers) signIn(w http.ResponseWriter, r *http.Request) {
-	log.Info("handling sign-in request")
-
 	session, err := h.cookieStore.Get(r, h.sessionCookieName)
 	if err != nil {
-		log.Info("Could not read cookie", err)
+		log.Info(err,"Could not read cookie")
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
 
 	rd := r.FormValue("rd")
 	if rd == "" {
-		log.Info("Could not get redirect", err)
+		log.Info(err, "Could not get redirect")
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 		return
 	}
 
-	token := r.FormValue("token")
-
-	if token == "" {
-		log.Info("no sign-in request, redirecting to login")
-
-		/*
-		 * Auth payload format
-		 * proxy;signature_of_redirect;redirect
-		 */
-
-		mac := hmac.New(sha256.New, []byte(h.token))
-		mac.Write([]byte(rd))
-
-		data := fmt.Sprintf("%s;%s;%s", "1", hex.EncodeToString(mac.Sum(nil)), rd)
-		encoding := base64.URLEncoding.EncodeToString([]byte(data))
-		redirectURL := fmt.Sprintf("%s/auth-proxy/%s", h.apiURL, encoding)
-
-		http.Redirect(w, r, redirectURL, http.StatusFound)
-	} else {
-		log.Info("got access token, storing session")
-
-		client := &http.Client{
-			Timeout: time.Second * 15,
-		}
-		url := fmt.Sprintf("%s/authproxy-verify", removeLastSlash(h.apiURL))
-		payload := tokenVerify{
-			Token: token,
-		}
-		request := createRequest(url, h.token, payload)
-		response, err := client.Do(request)
-		if err != nil {
-			log.Info("Could not verify token", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	if r.Method == "POST" {
+		token := r.FormValue("token")
+		if token == "" {
+			http.Error(w, "Invalid Token", http.StatusUnauthorized)
 			return
 		}
-		if response.StatusCode != 200 {
-			log.Info("Invalid token")
-			http.Error(w, "Forbidden", http.StatusForbidden)
+
+		_, err = h.tokenVerifier.Verify(context.Background(), token)
+		if err != nil {
+			http.Error(w, "Invalid Token", http.StatusUnauthorized)
 			return
 		}
 
@@ -138,8 +123,29 @@ func (h *Handlers) signIn(w http.ResponseWriter, r *http.Request) {
 			log.Error(err)
 		}
 
-		log.Info("redirect url", rd)
 		http.Redirect(w, r, rd, http.StatusFound)
+	} else {
+		tmpl, err := template.New("test").Parse(LoginForm)
+		if err != nil {
+			panic(err)
+		}
+		err = tmpl.Execute(w, nil)
+		if err != nil {
+			panic(err)
+		}
 	}
+}
 
+/**
+ * Clears the session and redirects to the sign-in page.
+ */
+func (h *Handlers) signOut(w http.ResponseWriter, r *http.Request) {
+	session, err := h.cookieStore.Get(r, h.sessionCookieName)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+	}
+	session.Values["token"] = ""
+	session.Options.MaxAge = -1
+	session.Save(r, w)
+	http.Redirect(w, r, "/", http.StatusFound)
 }
