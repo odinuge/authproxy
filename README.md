@@ -1,15 +1,22 @@
 # Whale AuthProxy
-> Whale auth support together with the nginx ingress
+> Whale auth support together with the NGINX ingress
 
-## Nginx
+## Configuration
 
-Header: HTTP_X_ORIGINAL_URL
-Query param: rd=url
+## Todo
+
+* Verify that the user has access to the requested resource
+* Tracing Support
+* Prometheus monitoring, requests, status codes and content-type
+
+## NGINX
+
+* X-ORIGINAL-URL
+* ?rd=url
 
 ## How it works
 
-* Nginx proxies to this server to check auth.
-* Returns 200 or 401 based on session auth status.
+* NGINX proxies to this server to check auth
+* Returns 200 or 401 based on session status
 * If 401 is returned, proxy to the sign in page
-* Redirect to gate for auth validation
-* Redirects back and updates the session
+* Sign in with a JWT token issued by DEX
