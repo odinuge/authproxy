@@ -1,22 +1,18 @@
 # Whale AuthProxy
-> Whale auth support together with the NGINX ingress
+> OpenID Connect auth proxy for NGINX with additional Whale permission check.
 
 ## Configuration
 
+* cookieName - The name of the cookie used to store the session
+* cookieSecret - Secret key used to generate the session
+* oidcClientID - Client ID
+* oidcClientSecret - Client secret
+* oidcIssuer - The OpenID connect provider service. Defaults to (https://gate.whale.oi)
+* whalePermissions - Enables an extra permission check using the Whale API. The issuer
+  needs to be Whale Gate when you enables this feature.
+
 ## Todo
 
-* Verify that the user has access to the requested resource
 * Tracing Support
 * Prometheus monitoring, requests, status codes and content-type
-
-## NGINX
-
-* X-ORIGINAL-URL
-* ?rd=url
-
-## How it works
-
-* NGINX proxies to this server to check auth
-* Returns 200 or 401 based on session status
-* If 401 is returned, proxy to the sign in page
-* Sign in with a JWT token issued by DEX
+* Logging
