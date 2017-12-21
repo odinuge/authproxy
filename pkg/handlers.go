@@ -9,6 +9,8 @@ import (
 	"github.com/coreos/go-oidc"
 	"context"
 	"golang.org/x/oauth2"
+	"fmt"
+	"net/url"
 )
 
 
@@ -56,7 +58,6 @@ func NewHandlers(secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientI
 	handlers.oauth2Config = &oauth2.Config{
 		ClientID: oidcClientID,
 		ClientSecret: oidcClientSecret,
-		RedirectURL: "http://127.0.0.1:3000/whale-auth/complete",
 		Endpoint: provider.Endpoint(),
 		Scopes: []string{oidc.ScopeOpenID, "authproxy"},
 	}
@@ -66,6 +67,14 @@ func NewHandlers(secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientI
 	handlers.api = NewAPI(oidcIssuerUrl)
 
 	return &handlers, nil
+}
+
+func createRedirectUrl(r string) string {
+	u, err := url.Parse(r)
+	if err != nil {
+		return "http://127.0.0.1/whale-auth/complete"
+	}
+	return fmt.Sprintf("%s://%s/whale-auth/complete", u.Scheme, u.Host)
 }
 
 /**
@@ -129,7 +138,11 @@ func (h *Handlers) signIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, h.oauth2Config.AuthCodeURL(rd), http.StatusFound)
+	oauth2Config := new(oauth2.Config)
+	*oauth2Config = *h.oauth2Config
+	oauth2Config.RedirectURL = createRedirectUrl(rd)
+
+	http.Redirect(w, r, oauth2Config.AuthCodeURL(rd), http.StatusFound)
 }
 
 /**
@@ -142,8 +155,13 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+	rd := r.URL.Query().Get("state")
 
-	oauth2Token, err := h.oauth2Config.Exchange(context.Background(), r.URL.Query().Get("code"))
+	oauth2Config := new(oauth2.Config)
+	*oauth2Config = *h.oauth2Config
+	oauth2Config.RedirectURL = createRedirectUrl(rd)
+
+	oauth2Token, err := oauth2Config.Exchange(context.Background(), r.URL.Query().Get("code"))
 	if err != nil {
 		http.Error(w, "Could not obtain token", http.StatusBadRequest)
 		return
@@ -169,7 +187,6 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rd := r.URL.Query().Get("state")
 	http.Redirect(w, r, rd, http.StatusFound)
 }
 

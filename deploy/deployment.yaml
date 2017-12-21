@@ -12,7 +12,7 @@ metadata:
 data:
   COOKIE_NAME: whalesession
   COOKIE_SECRET: ''
-  OIDC_ISSUER: http://gate.whale-system.svc.cluster.local
+  OIDC_ISSUER: https://gate.whale.io
   OIDC_CLIENT_ID: ''
   OIDC_CLIENT_SECRET: ''
   WHALE_PERMISSIONS: 'true'
