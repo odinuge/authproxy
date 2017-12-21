@@ -9,24 +9,24 @@ import (
 )
 
 func init() {
-	RootCmd.PersistentFlags().StringP("apiURL", "a", "https://gate.whale.io", "The API server providing authproxy information.")
-	RootCmd.PersistentFlags().StringP("token", "t","", "The token used by authproxy to access the API server.")
 	RootCmd.PersistentFlags().StringP("cookieName", "n", "whalesession", "The name of the whale session cookie. Should be the same on each instance if you run multiple instances.")
 	RootCmd.PersistentFlags().StringP("cookieSecret", "s", "", "The secret used when generating cookies. Should be the same on each instance if you run multiple instances.")
-	RootCmd.PersistentFlags().StringP("oidcIssuer", "", "", "OIDC issuer URL.")
+	RootCmd.PersistentFlags().StringP("oidcIssuer", "", "https://gate.whale.io", "OIDC issuer URL.")
 	RootCmd.PersistentFlags().StringP("oidcClientID", "", "", "OIDC client ID.")
-	viper.BindPFlag("apiURL", RootCmd.PersistentFlags().Lookup("apiURL"))
-	viper.BindPFlag("token", RootCmd.PersistentFlags().Lookup("token"))
+	RootCmd.PersistentFlags().StringP("oidcClientSecret", "", "", "OIDC client secret.")
+	RootCmd.PersistentFlags().BoolP("whalePermissions", "", true, "Check permissions against Whale, the oidcIssuer has to be Whale for this feature to work.")
 	viper.BindPFlag("cookieName", RootCmd.PersistentFlags().Lookup("cookieName"))
 	viper.BindPFlag("cookieSecret", RootCmd.PersistentFlags().Lookup("cookieSecret"))
 	viper.BindPFlag("oidcIssuer", RootCmd.PersistentFlags().Lookup("oidcIssuer"))
 	viper.BindPFlag("oidcClientID", RootCmd.PersistentFlags().Lookup("oidcClientID"))
-	viper.BindEnv("apiURL", "API_URL")
-	viper.BindEnv("token", "TOKEN")
+	viper.BindPFlag("oidcClientSecret", RootCmd.PersistentFlags().Lookup("oidcClientSecret"))
+	viper.BindPFlag("whalePermissions", RootCmd.PersistentFlags().Lookup("whalePermissions"))
 	viper.BindEnv("cookieName", "COOKIE_NAME")
 	viper.BindEnv("cookieSecret", "COOKIE_SECRET")
 	viper.BindEnv("oidcIssuer", "OIDC_ISSUER")
 	viper.BindEnv("oidcClientID", "OIDC_CLIENT_ID")
+	viper.BindEnv("oidcClientSecret", "OIDC_CLIENT_SECRET")
+	viper.BindEnv("whalePermissions", "WHALE_PERMISSIONS")
 }
 
 var RootCmd = &cobra.Command{
@@ -36,17 +36,9 @@ var RootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		var secret []byte
 
-		apiURL, token := viper.GetString("apiURL"), viper.GetString("token")
 		cookieName, cookieSecret := viper.GetString("cookieName"), viper.GetString("cookieSecret")
-		oidcIssuer, oidcClientID := viper.GetString("oidcIssuer"), viper.GetString("oidcClientID")
-
-		if apiURL == "" {
-			log.Fatal("The apiURL flag has to be set")
-		}
-
-		if token == "" {
-			log.Fatal("The token flag has to be set")
-		}
+		oidcIssuer, oidcClientID, oidcClientSecret := viper.GetString("oidcIssuer"), viper.GetString("oidcClientID"), viper.GetString("oidcClientSecret")
+		whalePermissions := viper.GetBool("whalePermissions")
 
 		if cookieSecret == "" {
 			log.Warn("No cookie secret provided, generating random secret")
@@ -57,18 +49,18 @@ var RootCmd = &cobra.Command{
 			secret = []byte(cookieSecret)
 		}
 
-		if oidcIssuer == "" || oidcClientID == "" {
-			log.Fatal("oidcIssuer and oidcClientID is required")
+		if oidcIssuer == "" || oidcClientID == "" || oidcClientSecret == "" {
+			log.Fatal("oidcIssuer, oidcClientID and oidcClientSecret is required")
 		}
 
 		server := pkg.Server{
 			CookieName: cookieName,
 			CookieSecret: secret,
 			ListenAddr: ":8080",
-			ApiURL: apiURL,
-			Token: token,
 			OIDCIssuer: oidcIssuer,
 			OIDCClient: oidcClientID,
+			OIDCClientSecret: oidcClientSecret,
+			WhalePermissions: whalePermissions,
 		}
 
 		err := server.Run()
