@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: authproxy
+  namespace: whale-system
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authproxy-config
+  namespace: whale-system
+data:
+  COOKIE_NAME: whalesession
+  COOKIE_SECRET: ''
+  OIDC_ISSUER: http://gate.whale-system.svc.cluster.local
+  OIDC_CLIENT_ID: ''
+  OIDC_CLIENT_SECRET: ''
+  WHALE_PERMISSIONS: 'true'
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: authproxy
+  labels:
+    app: authproxy
+  namespace: whale-system
+spec:
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: authproxy
+    spec:
+      serviceAccountName: authproxy
+      terminationGracePeriodSeconds: 60
+      containers:
+      - name: authproxy
+        image: getwhale/authproxy:0.0.1
+        envFrom:
+        - configMapRef:
+            name: authproxy-config
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: 50m
+            memory: 40Mi
+          requests:
+            cpu: 50m
+            memory: 40Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: authproxy
+  namespace: whale-system
+  labels:
+    app: authproxy
+spec:
+  ports:
+  - port: 80
+    targetPort: 8080
+  selector:
+    app: authproxy

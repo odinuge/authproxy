@@ -1,0 +1,32 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    ingress.kubernetes.io/auth-signin: https://$host/whale-auth/sign-in/
+    ingress.kubernetes.io/auth-url: https://$host/whale-auth/auth/
+  name: protectedservice
+  namespace: default
+spec:
+  rules:
+  - host: whale.io
+    http:
+      paths:
+      - backend:
+          serviceName: protectedservice
+          servicePort: 80
+        path: /
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: authproxy
+  namespace: whale-system
+spec:
+  rules:
+  - host: whale.io
+    http:
+      paths:
+      - backend:
+          serviceName: authproxy
+          servicePort: 80
+        path: /whale-auth

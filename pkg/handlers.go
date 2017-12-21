@@ -187,3 +187,10 @@ func (h *Handlers) signOut(w http.ResponseWriter, r *http.Request) {
 	session.Save(r, w)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
+
+/**
+ * Health endpoint
+ */
+func (h *Handlers) health(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+}

@@ -36,6 +36,7 @@ func (s *Server) Run() error {
 	r.HandleFunc("/whale-auth/sign-in", handlers.signIn).Methods("GET", "POST")
 	r.HandleFunc("/whale-auth/complete", handlers.complete).Methods("GET")
 	r.HandleFunc("/whale-auth/sign-out", handlers.signOut).Methods("GET")
+	r.HandleFunc("/health", handlers.health).Methods("GET")
 
 	r.Handle("/metrics", promhttp.Handler())
 
