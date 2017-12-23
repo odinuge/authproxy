@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"github.com/getwhale/authproxy/cmd"
+	"os"
 )
 
 func main() {

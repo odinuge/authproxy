@@ -2,17 +2,17 @@ package pkg
 
 import (
 	"github.com/gorilla/mux"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	"time"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Server struct {
-	CookieSecret []byte
-	CookieName string
-	ListenAddr string
-	OIDCIssuer string
-	OIDCClient string
+	CookieSecret     []byte
+	CookieName       string
+	ListenAddr       string
+	OIDCIssuer       string
+	OIDCClient       string
 	OIDCClientSecret string
 	WhalePermissions bool
 }

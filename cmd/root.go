@@ -1,11 +1,11 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-	log "github.com/getwhale/contrib/logging"
 	"crypto/rand"
 	"github.com/getwhale/authproxy/pkg"
+	log "github.com/getwhale/contrib/logging"
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 func init() {
@@ -32,7 +32,7 @@ func init() {
 var RootCmd = &cobra.Command{
 	Use:   "authproxy",
 	Short: "Authproxy running inside on-premise clusters.",
-	Long: ``,
+	Long:  ``,
 	Run: func(cmd *cobra.Command, args []string) {
 		var secret []byte
 
@@ -54,11 +54,11 @@ var RootCmd = &cobra.Command{
 		}
 
 		server := pkg.Server{
-			CookieName: cookieName,
-			CookieSecret: secret,
-			ListenAddr: ":8080",
-			OIDCIssuer: oidcIssuer,
-			OIDCClient: oidcClientID,
+			CookieName:       cookieName,
+			CookieSecret:     secret,
+			ListenAddr:       ":8080",
+			OIDCIssuer:       oidcIssuer,
+			OIDCClient:       oidcClientID,
 			OIDCClientSecret: oidcClientSecret,
 			WhalePermissions: whalePermissions,
 		}

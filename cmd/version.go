@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"github.com/spf13/cobra"
 	"fmt"
 	"github.com/getwhale/authproxy/pkg"
+	"github.com/spf13/cobra"
 )
 
 func init() {
