@@ -14,7 +14,6 @@ type Server struct {
 	OIDCIssuer       string
 	OIDCClient       string
 	OIDCClientSecret string
-	WhalePermissions bool
 }
 
 func (s *Server) Run() error {
@@ -26,18 +25,18 @@ func (s *Server) Run() error {
 		s.OIDCIssuer,
 		s.OIDCClient,
 		s.OIDCClientSecret,
-		s.WhalePermissions,
 	)
 	if err != nil {
 		return err
 	}
 
-	r.HandleFunc("/whale-auth/auth", handlers.authenticate).Methods("GET")
-	r.HandleFunc("/whale-auth/sign-in", handlers.signIn).Methods("GET", "POST")
-	r.HandleFunc("/whale-auth/complete", handlers.complete).Methods("GET")
+	r.HandleFunc("/whale-auth/auth/{id:[0-9]+}", handlers.authenticate).Methods("GET")
+	r.HandleFunc("/whale-auth/sign-in/{id:[0-9]+}", handlers.signIn).Methods("GET", "POST")
+	r.HandleFunc("/whale-auth/sign-complete/{state}", handlers.signInComplete).Methods("GET")
 	r.HandleFunc("/whale-auth/sign-out", handlers.signOut).Methods("GET")
-	r.HandleFunc("/health", handlers.health).Methods("GET")
 
+	r.HandleFunc("/complete", handlers.complete).Methods("GET")
+	r.HandleFunc("/healthz", handlers.health).Methods("GET")
 	r.Handle("/metrics", promhttp.Handler())
 
 	srv := &http.Server{

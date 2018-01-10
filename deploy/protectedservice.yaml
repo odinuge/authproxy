@@ -2,8 +2,8 @@ apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
   annotations:
-    ingress.kubernetes.io/auth-signin: https://$host/whale-auth/sign-in
-    ingress.kubernetes.io/auth-url: https://$host/whale-auth/auth
+    ingress.kubernetes.io/auth-signin: https://$host/whale-auth/sign-in/1
+    ingress.kubernetes.io/auth-url: https://$host/whale-auth/auth/1
   name: protectedservice
   namespace: default
 spec:

@@ -11,12 +11,10 @@ newer versions of the nginx ingress service.
 * oidcClientID - Client ID
 * oidcClientSecret - Client secret
 * oidcIssuer - The OpenID connect provider service. Defaults to (https://gate.whale.io)
-* whalePermissions - Enables an extra permission check using the Whale API. The issuer
-  needs to be Whale Gate when you enables this feature.
 
 ## Todo
 
 * Tracing Support
 * Prometheus monitoring, requests, status codes and content-type
-* Store a random assigned value in the state parameter, this requires a datastore
-  because is't normal to run multiple proxy instances.
+* Store a OTP in the oauth2 state to prevent replay attacks. This requires a
+  backend datastore like Redis to keep OTPs consistent between multiple instances.

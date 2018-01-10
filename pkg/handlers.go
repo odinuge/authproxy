@@ -6,30 +6,27 @@ import (
 	"fmt"
 	"github.com/coreos/go-oidc"
 	log "github.com/getwhale/contrib/logging"
+	"github.com/gorilla/mux"
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"net/http"
-	"net/url"
 )
 
 type Handlers struct {
-	sessionCookieName     string
-	secretKey             []byte
-	cookieStore           *sessions.CookieStore
-	apiURL                string
-	token                 string
-	oauth2Config          *oauth2.Config
-	tokenVerifier         *oidc.IDTokenVerifier
-	checkWhalePermissions bool
-	api                   *API
+	sessionCookieName string
+	secretKey         []byte
+	cookieStore       *sessions.CookieStore
+	apiURL            string
+	token             string
+	oauth2Config      *oauth2.Config
+	tokenVerifier     *oidc.IDTokenVerifier
+	api               *API
 }
 
-type Claims struct {
-	Groups []string `json:"groups"`
-}
+type Claims struct{}
 
-func NewHandlers(secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientID, oidcClientSecret string, whalePermissions bool) (*Handlers, error) {
+func NewHandlers(secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientID, oidcClientSecret string) (*Handlers, error) {
 	if len(secretKey) < 32 {
 		return nil, errors.New("secret key needs to have a length of at least 32")
 	}
@@ -52,7 +49,7 @@ func NewHandlers(secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientI
 
 	provider, err := oidc.NewProvider(context.Background(), oidcIssuerUrl)
 	if err != nil {
-		log.Fatal(err, "Could not create dex provider")
+		log.Fatal(err, "Could not create oidc provider")
 	}
 	handlers.oauth2Config = &oauth2.Config{
 		ClientID:     oidcClientID,
@@ -62,18 +59,13 @@ func NewHandlers(secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientI
 	}
 	handlers.tokenVerifier = provider.Verifier(&oidc.Config{ClientID: oidcClientID})
 
-	handlers.checkWhalePermissions = whalePermissions
 	handlers.api = NewAPI(oidcIssuerUrl)
 
 	return &handlers, nil
 }
 
-func createRedirectUrl(r string) string {
-	u, err := url.Parse(r)
-	if err != nil {
-		return "http://127.0.0.1/whale-auth/complete"
-	}
-	return fmt.Sprintf("%s://%s/whale-auth/complete", u.Scheme, u.Host)
+func createRedirectUrl() string {
+	return "http://192.168.10.117:8080/complete"
 }
 
 /**
@@ -111,27 +103,17 @@ func (h *Handlers) authenticate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.checkWhalePermissions {
-		logger.Info("Access granted without whale permissions")
-		return
-	}
-
 	// Permissions check
 	accessToken, ok := session.Values["access_token"].(string)
-	if !ok {
-		logger.Info("No access token")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
+	siteId := mux.Vars(r)["id"]
 
-	originalURL := r.Header.Get("X-ORIGINAL-URL")
-	authorized, err := h.api.authorize(accessToken, originalURL)
+	authorized, err := h.api.authorize(accessToken, siteId)
 	if !authorized || err != nil {
-		logger.WithFields(log.Fields{"url": originalURL}).Info("Access denied by whale")
+		logger.WithFields(log.Fields{"siteId": siteId}).Info("Access denied by whale")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	logger.WithFields(log.Fields{"url": originalURL}).Info("Access granted")
+	logger.WithFields(log.Fields{"siteId": siteId}).Info("Access granted")
 }
 
 /**
@@ -148,10 +130,46 @@ func (h *Handlers) signIn(w http.ResponseWriter, r *http.Request) {
 
 	oauth2Config := new(oauth2.Config)
 	*oauth2Config = *h.oauth2Config
-	oauth2Config.RedirectURL = createRedirectUrl(rd)
+	oauth2Config.RedirectURL = createRedirectUrl()
 
 	logger.Info("Initializing oauth2 redirect")
-	http.Redirect(w, r, oauth2Config.AuthCodeURL(rd), http.StatusFound)
+
+	siteID := mux.Vars(r)["id"]
+	state := EncodeState(h.secretKey, rd, siteID)
+
+	http.Redirect(w, r, oauth2Config.AuthCodeURL(state), http.StatusFound)
+}
+
+// Receive the encrypted secrets from the complete endpoint and update session.
+func (h *Handlers) signInComplete(w http.ResponseWriter, r *http.Request) {
+	logger := log.WithFields(log.Fields{"handler": "signInComplete"})
+	session, err := h.cookieStore.Get(r, h.sessionCookieName)
+	if err != nil {
+		logger.Warn("Cannot parse session")
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	vars := mux.Vars(r)
+	state, err := DecryptCompleteState(h.secretKey, vars["state"])
+
+	if err != nil {
+		logger.Warn("Unable to read complete state")
+		http.Error(w, "Internal sever error", http.StatusInternalServerError)
+		return
+	}
+
+	session.Values["id_token"] = state.IDToken
+	session.Values["access_token"] = state.AccessToken
+
+	err = session.Save(r, w)
+	if err != nil {
+		logger.Warn("Unable to update session")
+		http.Error(w, "Internal sever error", http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, state.Redirect, http.StatusFound)
 }
 
 /**
@@ -159,17 +177,18 @@ func (h *Handlers) signIn(w http.ResponseWriter, r *http.Request) {
  */
 func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 	logger := log.WithFields(log.Fields{"handler": "complete"})
-	session, err := h.cookieStore.Get(r, h.sessionCookieName)
-	if err != nil {
-		logger.Warn("Cannot parse session")
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+
+	stateParam := r.URL.Query().Get("state")
+	state, ok := DecodeState(h.secretKey, stateParam)
+	if !ok {
+		logger.Info("Invalid state param")
+		http.Error(w, "Invalid state param", http.StatusBadRequest)
 		return
 	}
-	rd := r.URL.Query().Get("state")
 
 	oauth2Config := new(oauth2.Config)
 	*oauth2Config = *h.oauth2Config
-	oauth2Config.RedirectURL = createRedirectUrl(rd)
+	oauth2Config.RedirectURL = createRedirectUrl()
 
 	oauth2Token, err := oauth2Config.Exchange(context.Background(), r.URL.Query().Get("code"))
 	if err != nil {
@@ -192,17 +211,23 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session.Values["id_token"] = rawIDToken
-	session.Values["access_token"] = oauth2Token.AccessToken
-	err = session.Save(r, w)
-	if err != nil {
-		logger.Warn("Unable to update session")
-		http.Error(w, "Internal sever error", http.StatusInternalServerError)
+	authorized, err := h.api.authorize(oauth2Token.AccessToken, state.SiteID)
+	if !authorized || err != nil {
+		logger.WithFields(log.Fields{"siteId": state.SiteID}).Info("Access denied by whale")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	logger.Info("Session updated, redirecting to site")
-	http.Redirect(w, r, rd, http.StatusFound)
+	completeState, err := EncryptCompleteState(h.secretKey, state.Redirect, rawIDToken, oauth2Token.AccessToken)
+	if err != nil {
+		logger.Info("Could not encrypt state")
+		http.Error(w, "Invalid token", http.StatusBadRequest)
+		return
+	}
+
+	logger.Info("Session updated, redirecting to sign-in complete")
+	url := fmt.Sprintf("http://127.0.0.1:3000/whale-auth/sign-complete/%s", completeState)
+	http.Redirect(w, r, url, http.StatusFound)
 }
 
 /**

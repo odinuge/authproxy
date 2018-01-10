@@ -7,8 +7,6 @@ import (
 	log "github.com/getwhale/contrib/logging"
 	"github.com/patrickmn/go-cache"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 )
 
@@ -33,17 +31,10 @@ func NewAPI(apiURL string) *API {
 	return &api
 }
 
-func (a *API) authorize(accessToken, originalURL string) (bool, error) {
+func (a *API) authorize(accessToken, siteId string) (bool, error) {
 	logger := log.WithFields(log.Fields{"component": "api"})
-	u, err := url.Parse(originalURL)
-	if err != nil {
-		logger.Warn("Unable to parse redirect url")
-		return false, err
-	}
 
-	host := strings.ToLower(u.Host)
-
-	cacheKey := fmt.Sprintf("%s-%s", accessToken, host)
+	cacheKey := fmt.Sprintf("%s-%s", accessToken, siteId)
 	cached, found := a.cache.Get(cacheKey)
 	if found {
 		logger.Info("Using cached value")
@@ -52,7 +43,7 @@ func (a *API) authorize(accessToken, originalURL string) (bool, error) {
 
 	logger.Info("No cache found, fetching access from whale")
 	payload := authorizePaylaod{
-		Resource: host,
+		Resource: siteId,
 	}
 	var authorized bool
 
@@ -66,7 +57,7 @@ func (a *API) authorize(accessToken, originalURL string) (bool, error) {
 	if err == nil && response.StatusCode == 200 {
 		logger.WithFields(log.Fields{
 			"statusCode": response.StatusCode,
-			"host":       host,
+			"siteId":     siteId,
 		}).Info("Access granted by whale")
 		authorized = true
 		a.cache.Set(cacheKey, authorized, cache.DefaultExpiration)
@@ -74,9 +65,8 @@ func (a *API) authorize(accessToken, originalURL string) (bool, error) {
 	}
 
 	logger.WithFields(log.Fields{
-		"statusCode": response.StatusCode,
-		"error":      err,
-		"host":       host,
+		"error":  err,
+		"siteId": siteId,
 	}).Info("Access denied by whale")
 	return authorized, err
 }
