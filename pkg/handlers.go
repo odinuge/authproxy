@@ -20,7 +20,6 @@ type Handlers struct {
 	apiURL            string
 	token             string
 	oauth2Config      *oauth2.Config
-	tokenVerifier     *oidc.IDTokenVerifier
 	api               *API
 }
 
@@ -57,7 +56,6 @@ func NewHandlers(secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientI
 		Endpoint:     provider.Endpoint(),
 		Scopes:       []string{oidc.ScopeOpenID, "authproxy"},
 	}
-	handlers.tokenVerifier = provider.Verifier(&oidc.Config{ClientID: oidcClientID})
 
 	handlers.api = NewAPI(oidcIssuerUrl)
 
@@ -80,31 +78,13 @@ func (h *Handlers) authenticate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, ok := session.Values["id_token"].(string)
-
-	if !ok {
-		logger.Info("No token in session")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	idToken, err := h.tokenVerifier.Verify(context.Background(), token)
-	if err != nil {
-		logger.Info("Invalid token in session")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	var claims Claims
-	err = idToken.Claims(&claims)
-	if err != nil {
-		logger.Info("Could not parse token claims")
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	// Permissions check
 	accessToken, ok := session.Values["access_token"].(string)
+	if !ok {
+		logger.Info("Could not retrieve access_token from session")
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 	siteId := mux.Vars(r)["id"]
 
 	authorized, err := h.api.authorize(accessToken, siteId)
@@ -152,14 +132,12 @@ func (h *Handlers) signInComplete(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
 	state, err := DecryptCompleteState(h.secretKey, vars["state"])
-
 	if err != nil {
 		logger.Warn("Unable to read complete state")
 		http.Error(w, "Internal sever error", http.StatusInternalServerError)
 		return
 	}
 
-	session.Values["id_token"] = state.IDToken
 	session.Values["access_token"] = state.AccessToken
 
 	err = session.Save(r, w)
@@ -197,20 +175,6 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rawIDToken, ok := oauth2Token.Extra("id_token").(string)
-	if !ok {
-		logger.Info("Token missing in response")
-		http.Error(w, "Token is missing in response", http.StatusBadRequest)
-		return
-	}
-
-	_, err = h.tokenVerifier.Verify(context.Background(), rawIDToken)
-	if err != nil {
-		logger.Info("Invalid token")
-		http.Error(w, "Invalid token", http.StatusBadRequest)
-		return
-	}
-
 	authorized, err := h.api.authorize(oauth2Token.AccessToken, state.SiteID)
 	if !authorized || err != nil {
 		logger.WithFields(log.Fields{"siteId": state.SiteID}).Info("Access denied by whale")
@@ -218,7 +182,7 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	completeState, err := EncryptCompleteState(h.secretKey, state.Redirect, rawIDToken, oauth2Token.AccessToken)
+	completeState, err := EncryptCompleteState(h.secretKey, state.Redirect, oauth2Token.AccessToken)
 	if err != nil {
 		logger.Info("Could not encrypt state")
 		http.Error(w, "Invalid token", http.StatusBadRequest)
