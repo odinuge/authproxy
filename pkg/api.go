@@ -6,6 +6,7 @@ import (
 	"fmt"
 	log "github.com/getwhale/contrib/logging"
 	"github.com/patrickmn/go-cache"
+	"io/ioutil"
 	"net/http"
 	"time"
 )
@@ -20,6 +21,15 @@ type authorizePaylaod struct {
 	Resource string `json:"resource"`
 }
 
+type authResponse struct {
+	URL string `json:"url"`
+}
+
+type cachePayload struct {
+	Access bool
+	URL    string
+}
+
 func NewAPI(apiURL string) *API {
 	api := API{
 		apiUrl: apiURL,
@@ -31,14 +41,15 @@ func NewAPI(apiURL string) *API {
 	return &api
 }
 
-func (a *API) authorize(accessToken, siteId string) (bool, error) {
+func (a *API) authorize(accessToken, siteId string) (bool, string, error) {
 	logger := log.WithFields(log.Fields{"component": "api"})
 
 	cacheKey := fmt.Sprintf("%s-%s", accessToken, siteId)
 	cached, found := a.cache.Get(cacheKey)
 	if found {
 		logger.Info("Using cached value")
-		return cached.(bool), nil
+		payload := cached.(cachePayload)
+		return payload.Access, payload.URL, nil
 	}
 
 	logger.Info("No cache found, fetching access from whale")
@@ -63,8 +74,22 @@ func (a *API) authorize(accessToken, siteId string) (bool, error) {
 				"siteId":     siteId,
 			}).Info("Access granted by whale")
 			authorized = true
-			a.cache.Set(cacheKey, authorized, cache.DefaultExpiration)
-			return authorized, nil
+
+			body, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				log.Info("Could not read response from gate")
+				return false, "", err
+			}
+
+			var data authResponse
+			json.Unmarshal(body, &data)
+
+			cacheData := cachePayload{
+				Access: authorized,
+				URL:    data.URL,
+			}
+			a.cache.Set(cacheKey, cacheData, cache.DefaultExpiration)
+			return authorized, data.URL, nil
 		}
 	}
 
@@ -72,5 +97,5 @@ func (a *API) authorize(accessToken, siteId string) (bool, error) {
 		"error":  err,
 		"siteId": siteId,
 	}).Info("Access denied by whale")
-	return authorized, err
+	return authorized, "", err
 }

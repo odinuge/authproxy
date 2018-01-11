@@ -13,6 +13,7 @@ import (
 	"golang.org/x/oauth2"
 	"net/http"
 	"net/url"
+	goStrings "strings"
 )
 
 type Handlers struct {
@@ -91,7 +92,7 @@ func (h *Handlers) authenticate(w http.ResponseWriter, r *http.Request) {
 	}
 	siteId := mux.Vars(r)["id"]
 
-	authorized, err := h.api.authorize(accessToken, siteId)
+	authorized, _, err := h.api.authorize(accessToken, siteId)
 	if !authorized || err != nil {
 		logger.WithFields(log.Fields{"siteId": siteId}).Info("Access denied by whale")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -179,7 +180,7 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authorized, err := h.api.authorize(oauth2Token.AccessToken, state.SiteID)
+	authorized, redirect, err := h.api.authorize(oauth2Token.AccessToken, state.SiteID)
 	if !authorized || err != nil {
 		logger.WithFields(log.Fields{"siteId": state.SiteID}).Info("Access denied by whale")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -193,14 +194,22 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirect, err := url.Parse(state.Redirect)
-	if err != nil {
-		logger.Info("Cannot parse redirect url")
+	paramURL, err := url.Parse(state.Redirect)
+	if err != nil { http.Error(w, "Internal Server Error", http.StatusBadRequest); return }
+	siteURL, err := url.Parse(state.Redirect)
+	if err != nil { http.Error(w, "Internal Server Error", http.StatusBadRequest); return }
+
+	// Make sure we don't send the completeState to another domain.
+	if goStrings.ToLower(paramURL.Host) != goStrings.ToLower(siteURL.Host) {
+		logger.WithFields(log.Fields{
+			"siteURL":  redirect,
+			"redirect": state.Redirect,
+		}).Info("The ?rd query param does not belong to the correct site.")
 		http.Error(w, "Invalid redirect", http.StatusBadRequest)
 		return
 	}
 
-	completeURL := fmt.Sprintf("%s://%s/whale-auth/sign-complete/%s", redirect.Scheme, redirect.Host, completeState)
+	completeURL := fmt.Sprintf("%s/whale-auth/sign-complete/%s", strings.RemoveLastSlash(redirect), completeState)
 	logger.WithFields(log.Fields{"redirect": completeURL}).Info("Session updated, redirecting to sign-in complete")
 	http.Redirect(w, r, completeURL, http.StatusFound)
 }

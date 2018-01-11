@@ -22,8 +22,8 @@
 [[projects]]
   branch = "master"
   name = "github.com/getwhale/contrib"
-  packages = ["debug","logging"]
-  revision = "367cb47b035e83d34c4aac683e323403ce28d273"
+  packages = ["debug","logging","runtime","strings"]
+  revision = "5d4627490472c543b371cb90c04d1505afe86552"
 
 [[projects]]
   branch = "master"
@@ -220,6 +220,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "afb0141d742a71d4ec14f4adec64b37ade406013e36b89b585241ce7f2ada8da"
+  inputs-digest = "5bf6fc275f4d24d721bab8c334e6f2c622f18cf872bcff630e8e0b0c517e0aa1"
   solver-name = "gps-cdcl"
   solver-version = 1
