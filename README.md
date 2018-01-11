@@ -6,6 +6,7 @@ newer versions of the nginx ingress service.
 
 ## Configuration
 
+* serverURL - The url this service is publicly visible, used for oauth redirects
 * cookieName - The name of the cookie used to store the session
 * cookieSecret - Secret key used to generate the session
 * oidcClientID - Client ID

@@ -10,12 +10,12 @@ metadata:
   name: authproxy-config
   namespace: whale-system
 data:
+  SERVER_URL: ''
   COOKIE_NAME: whalesession
   COOKIE_SECRET: ''
   OIDC_ISSUER: https://gate.whale.io
   OIDC_CLIENT_ID: ''
   OIDC_CLIENT_SECRET: ''
-  WHALE_PERMISSIONS: 'true'
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment
@@ -41,7 +41,7 @@ spec:
             name: authproxy-config
         livenessProbe:
           httpGet:
-            path: /health
+            path: /healthz
             port: 8080
             scheme: HTTP
           initialDelaySeconds: 30
@@ -69,3 +69,18 @@ spec:
     targetPort: 8080
   selector:
     app: authproxy
+---
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: authproxy
+  namespace: whale-system
+spec:
+  rules:
+  - host: proxy.whale.io
+    http:
+      paths:
+      - backend:
+          serviceName: authproxy
+          servicePort: 80
+        path: /

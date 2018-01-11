@@ -6,14 +6,17 @@ import (
 	"fmt"
 	"github.com/coreos/go-oidc"
 	log "github.com/getwhale/contrib/logging"
+	"github.com/getwhale/contrib/strings"
 	"github.com/gorilla/mux"
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
 	"net/http"
+	"net/url"
 )
 
 type Handlers struct {
+	serverURL         string
 	sessionCookieName string
 	secretKey         []byte
 	cookieStore       *sessions.CookieStore
@@ -25,12 +28,13 @@ type Handlers struct {
 
 type Claims struct{}
 
-func NewHandlers(secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientID, oidcClientSecret string) (*Handlers, error) {
+func NewHandlers(serverURL string, secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientID, oidcClientSecret string) (*Handlers, error) {
 	if len(secretKey) < 32 {
 		return nil, errors.New("secret key needs to have a length of at least 32")
 	}
 
 	handlers := Handlers{
+		serverURL:         serverURL,
 		sessionCookieName: sessionCookieName,
 		secretKey:         secretKey,
 	}
@@ -62,8 +66,8 @@ func NewHandlers(secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientI
 	return &handlers, nil
 }
 
-func createRedirectUrl() string {
-	return "http://192.168.10.117:8080/complete"
+func (h *Handlers) createRedirectUrl() string {
+	return fmt.Sprintf("%s/complete", strings.RemoveLastSlash(h.serverURL))
 }
 
 /**
@@ -110,7 +114,7 @@ func (h *Handlers) signIn(w http.ResponseWriter, r *http.Request) {
 
 	oauth2Config := new(oauth2.Config)
 	*oauth2Config = *h.oauth2Config
-	oauth2Config.RedirectURL = createRedirectUrl()
+	oauth2Config.RedirectURL = h.createRedirectUrl()
 
 	logger.Info("Initializing oauth2 redirect")
 
@@ -166,7 +170,7 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 
 	oauth2Config := new(oauth2.Config)
 	*oauth2Config = *h.oauth2Config
-	oauth2Config.RedirectURL = createRedirectUrl()
+	oauth2Config.RedirectURL = h.createRedirectUrl()
 
 	oauth2Token, err := oauth2Config.Exchange(context.Background(), r.URL.Query().Get("code"))
 	if err != nil {
@@ -189,9 +193,16 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logger.Info("Session updated, redirecting to sign-in complete")
-	url := fmt.Sprintf("http://127.0.0.1:3000/whale-auth/sign-complete/%s", completeState)
-	http.Redirect(w, r, url, http.StatusFound)
+	redirect, err := url.Parse(state.Redirect)
+	if err != nil {
+		logger.Info("Cannot parse redirect url")
+		http.Error(w, "Invalid redirect", http.StatusBadRequest)
+		return
+	}
+
+	completeURL := fmt.Sprintf("%s://%s/whale-auth/sign-complete/%s", redirect.Scheme, redirect.Host, completeState)
+	logger.WithFields(log.Fields{"redirect": completeURL}).Info("Session updated, redirecting to sign-in complete")
+	http.Redirect(w, r, completeURL, http.StatusFound)
 }
 
 /**

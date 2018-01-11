@@ -1,6 +1,7 @@
 package pkg
 
 import (
+	"github.com/getwhale/contrib/runtime"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 )
 
 type Server struct {
+	ServerURL        string
 	CookieSecret     []byte
 	CookieName       string
 	ListenAddr       string
@@ -17,9 +19,12 @@ type Server struct {
 }
 
 func (s *Server) Run() error {
+	runtime.OptimizeRuntime()
+
 	r := mux.NewRouter()
 
 	handlers, err := NewHandlers(
+		s.ServerURL,
 		s.CookieSecret,
 		s.CookieName,
 		s.OIDCIssuer,

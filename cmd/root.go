@@ -9,16 +9,19 @@ import (
 )
 
 func init() {
+	RootCmd.PersistentFlags().StringP("serverURL", "u", "", "The url this service is publicly visible, used for oauth redirects.")
 	RootCmd.PersistentFlags().StringP("cookieName", "n", "whalesession", "The name of the whale session cookie. Should be the same on each instance if you run multiple instances.")
 	RootCmd.PersistentFlags().StringP("cookieSecret", "s", "", "The secret used when generating cookies. Should be the same on each instance if you run multiple instances.")
 	RootCmd.PersistentFlags().StringP("oidcIssuer", "", "https://gate.whale.io", "OIDC issuer URL.")
 	RootCmd.PersistentFlags().StringP("oidcClientID", "", "", "OIDC client ID.")
 	RootCmd.PersistentFlags().StringP("oidcClientSecret", "", "", "OIDC client secret.")
+	viper.BindPFlag("serverURL", RootCmd.PersistentFlags().Lookup("serverURL"))
 	viper.BindPFlag("cookieName", RootCmd.PersistentFlags().Lookup("cookieName"))
 	viper.BindPFlag("cookieSecret", RootCmd.PersistentFlags().Lookup("cookieSecret"))
 	viper.BindPFlag("oidcIssuer", RootCmd.PersistentFlags().Lookup("oidcIssuer"))
 	viper.BindPFlag("oidcClientID", RootCmd.PersistentFlags().Lookup("oidcClientID"))
 	viper.BindPFlag("oidcClientSecret", RootCmd.PersistentFlags().Lookup("oidcClientSecret"))
+	viper.BindEnv("serverURL", "SERVER_URL")
 	viper.BindEnv("cookieName", "COOKIE_NAME")
 	viper.BindEnv("cookieSecret", "COOKIE_SECRET")
 	viper.BindEnv("oidcIssuer", "OIDC_ISSUER")
@@ -33,8 +36,13 @@ var RootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		var secret []byte
 
+		serverURL := viper.GetString("serverURL")
 		cookieName, cookieSecret := viper.GetString("cookieName"), viper.GetString("cookieSecret")
 		oidcIssuer, oidcClientID, oidcClientSecret := viper.GetString("oidcIssuer"), viper.GetString("oidcClientID"), viper.GetString("oidcClientSecret")
+
+		if serverURL == "" {
+			log.Fatal("The serverURL flag is required")
+		}
 
 		if cookieSecret == "" {
 			log.Warn("No cookie secret provided, generating random secret")
@@ -50,6 +58,7 @@ var RootCmd = &cobra.Command{
 		}
 
 		server := pkg.Server{
+			ServerURL:        serverURL,
 			CookieName:       cookieName,
 			CookieSecret:     secret,
 			ListenAddr:       ":8080",
