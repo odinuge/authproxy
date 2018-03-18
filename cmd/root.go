@@ -2,7 +2,9 @@ package cmd
 
 import (
 	"crypto/rand"
+
 	"github.com/getwhale/authproxy/pkg"
+	"github.com/getwhale/contrib/cli"
 	log "github.com/getwhale/contrib/logging"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -29,11 +31,13 @@ func init() {
 	viper.BindEnv("oidcClientSecret", "OIDC_CLIENT_SECRET")
 }
 
+var shortDescription = "Authproxy running inside on-premise clusters."
+
 var RootCmd = &cobra.Command{
 	Use:   "authproxy",
-	Short: "Authproxy running inside on-premise clusters.",
+	Short: shortDescription,
 	Long:  ``,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		var secret []byte
 
 		serverURL := viper.GetString("serverURL")
@@ -67,9 +71,9 @@ var RootCmd = &cobra.Command{
 			OIDCClientSecret: oidcClientSecret,
 		}
 
-		err := server.Run()
-		if err != nil {
-			log.Fatal(err, "Internal Server Error")
-		}
+		return server.Run()
+	},
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		cli.PrintHeader(shortDescription)
 	},
 }
