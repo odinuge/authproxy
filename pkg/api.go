@@ -4,21 +4,25 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	log "github.com/getwhale/contrib/logging"
-	"github.com/patrickmn/go-cache"
 	"io/ioutil"
 	"net/http"
 	"time"
+
+	log "github.com/getwhale/contrib/logging"
+	"github.com/patrickmn/go-cache"
 )
 
 type API struct {
-	apiUrl string
-	client *http.Client
-	cache  *cache.Cache
+	apiUrl       string
+	client       *http.Client
+	cache        *cache.Cache
+	clientId     string
+	clientSecret string
 }
 
 type authorizePaylaod struct {
 	Resource string `json:"resource"`
+	User     string `json:"user"`
 }
 
 type authResponse struct {
@@ -30,9 +34,11 @@ type cachePayload struct {
 	URL    string
 }
 
-func NewAPI(apiURL string) *API {
+func NewAPI(apiURL, clientId, clientSecret string) *API {
 	api := API{
-		apiUrl: apiURL,
+		apiUrl:       apiURL,
+		clientId:     clientId,
+		clientSecret: clientSecret,
 	}
 	api.client = &http.Client{
 		Timeout: time.Second * 10,
@@ -41,10 +47,11 @@ func NewAPI(apiURL string) *API {
 	return &api
 }
 
-func (a *API) authorize(accessToken, siteId string) (bool, string, error) {
+func (a *API) authorize(userId, siteId string) (bool, string, error) {
 	logger := log.WithFields(log.Fields{"component": "api"})
+	logger.Infof("authorizing user: %s %s", userId, siteId)
 
-	cacheKey := fmt.Sprintf("%s-%s", accessToken, siteId)
+	cacheKey := fmt.Sprintf("%s-%s", userId, siteId)
 	cached, found := a.cache.Get(cacheKey)
 	if found {
 		logger.Info("Using cached value")
@@ -55,13 +62,14 @@ func (a *API) authorize(accessToken, siteId string) (bool, string, error) {
 	logger.Info("No cache found, fetching access from whale")
 	payload := authorizePaylaod{
 		Resource: siteId,
+		User:     userId,
 	}
 	var authorized bool
 
 	apiURL := fmt.Sprintf("%s/authproxy-daemon/authorize", a.apiUrl)
 	j, _ := json.Marshal(payload)
 	request, _ := http.NewRequest("POST", apiURL, bytes.NewReader(j))
-	request.Header.Add("AUTHORIZATION", fmt.Sprintf("Bearer %s", accessToken))
+	request.Header.Add("AUTHORIZATION", fmt.Sprintf("ServiceAccount %s:%s", a.clientId, a.clientSecret))
 	request.Header.Add("CONTENT-TYPE", "application/json")
 	request.Close = true
 	response, err := a.client.Do(request)

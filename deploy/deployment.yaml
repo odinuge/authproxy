@@ -10,12 +10,14 @@ metadata:
   name: authproxy-config
   namespace: whale-system
 data:
-  SERVER_URL: ''
-  COOKIE_NAME: whalesession
-  COOKIE_SECRET: ''
-  OIDC_ISSUER: https://gate.whale.io
-  OIDC_CLIENT_ID: ''
-  OIDC_CLIENT_SECRET: ''
+  SERVERURL: ''
+  COOKIENAME: whalesession
+  COOKIESECRET: ''
+  GATEURL: https://gate.whale.io
+  CLIENTID: ''
+  CLINTSECRET: ''
+  OIDCCLIENTID: ''
+  OIDCCLIENTSECRET: ''
 ---
 apiVersion: extensions/v1beta1
 kind: Deployment

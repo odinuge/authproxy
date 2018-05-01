@@ -1,11 +1,12 @@
 package pkg
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/getwhale/contrib/runtime"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"net/http"
-	"time"
 )
 
 type Server struct {
@@ -16,6 +17,8 @@ type Server struct {
 	OIDCIssuer       string
 	OIDCClient       string
 	OIDCClientSecret string
+	ClientId         string
+	ClientSecret     string
 }
 
 func (s *Server) Run() error {
@@ -30,6 +33,8 @@ func (s *Server) Run() error {
 		s.OIDCIssuer,
 		s.OIDCClient,
 		s.OIDCClientSecret,
+		s.ClientId,
+		s.ClientSecret,
 	)
 	if err != nil {
 		return err

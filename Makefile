@@ -1,6 +1,6 @@
 all: push
 
-TAG=0.0.1
+TAG=0.0.2
 PREFIX?=getwhale/authproxy
 ARCH?=amd64
 

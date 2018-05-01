@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
+	goStrings "strings"
+
 	"github.com/coreos/go-oidc"
 	log "github.com/getwhale/contrib/logging"
 	"github.com/getwhale/contrib/strings"
@@ -11,9 +15,6 @@ import (
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
 	"golang.org/x/oauth2"
-	"net/http"
-	"net/url"
-	goStrings "strings"
 )
 
 type Handlers struct {
@@ -23,13 +24,14 @@ type Handlers struct {
 	cookieStore       *sessions.CookieStore
 	apiURL            string
 	token             string
+	provider          *oidc.Provider
 	oauth2Config      *oauth2.Config
 	api               *API
 }
 
 type Claims struct{}
 
-func NewHandlers(serverURL string, secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientID, oidcClientSecret string) (*Handlers, error) {
+func NewHandlers(serverURL string, secretKey []byte, sessionCookieName, oidcIssuerUrl, oidcClientID, oidcClientSecret, clientId, clientSecret string) (*Handlers, error) {
 	if len(secretKey) < 32 {
 		return nil, errors.New("secret key needs to have a length of at least 32")
 	}
@@ -55,20 +57,45 @@ func NewHandlers(serverURL string, secretKey []byte, sessionCookieName, oidcIssu
 	if err != nil {
 		log.Fatal(err, "Could not create oidc provider")
 	}
+	handlers.provider = provider
 	handlers.oauth2Config = &oauth2.Config{
 		ClientID:     oidcClientID,
 		ClientSecret: oidcClientSecret,
 		Endpoint:     provider.Endpoint(),
-		Scopes:       []string{oidc.ScopeOpenID, "authproxy"},
+		Scopes:       []string{oidc.ScopeOpenID},
 	}
 
-	handlers.api = NewAPI(oidcIssuerUrl)
+	handlers.api = NewAPI(oidcIssuerUrl, clientId, clientSecret)
 
 	return &handlers, nil
 }
 
 func (h *Handlers) createRedirectUrl() string {
 	return fmt.Sprintf("%s/complete", strings.RemoveLastSlash(h.serverURL))
+}
+
+func (h *Handlers) parseIDToken(token *oauth2.Token) (string, error) {
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok {
+		log.Infof("No id_token found")
+		return "", errors.New("no id_token found")
+	}
+
+	var verifier = h.provider.Verifier(&oidc.Config{ClientID: h.oauth2Config.ClientID})
+	idToken, err := verifier.Verify(context.Background(), rawIDToken)
+	if err != nil {
+		return "", err
+	}
+
+	var claims struct {
+		UserId string `json:"sub"`
+	}
+
+	if err := idToken.Claims(&claims); err != nil {
+		return "", err
+	}
+
+	return claims.UserId, nil
 }
 
 /**
@@ -84,15 +111,15 @@ func (h *Handlers) authenticate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Permissions check
-	accessToken, ok := session.Values["access_token"].(string)
+	userId, ok := session.Values["user_id"].(string)
 	if !ok {
-		logger.Info("Could not retrieve access_token from session")
+		logger.Info("Could not retrieve user_id from session")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 	siteId := mux.Vars(r)["id"]
 
-	authorized, _, err := h.api.authorize(accessToken, siteId)
+	authorized, _, err := h.api.authorize(userId, siteId)
 	if !authorized || err != nil {
 		logger.WithFields(log.Fields{"siteId": siteId}).Info("Access denied by whale")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
@@ -143,7 +170,7 @@ func (h *Handlers) signInComplete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session.Values["access_token"] = state.AccessToken
+	session.Values["user_id"] = state.UserID
 
 	err = session.Save(r, w)
 	if err != nil {
@@ -180,14 +207,16 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	authorized, redirect, err := h.api.authorize(oauth2Token.AccessToken, state.SiteID)
+	userID, err := h.parseIDToken(oauth2Token)
+
+	authorized, redirect, err := h.api.authorize(userID, state.SiteID)
 	if !authorized || err != nil {
 		logger.WithFields(log.Fields{"siteId": state.SiteID}).Info("Access denied by whale")
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	completeState, err := EncryptCompleteState(h.secretKey, state.Redirect, oauth2Token.AccessToken)
+	completeState, err := EncryptCompleteState(h.secretKey, state.Redirect, userID)
 	if err != nil {
 		logger.Info("Could not encrypt state")
 		http.Error(w, "Invalid token", http.StatusBadRequest)
@@ -195,9 +224,15 @@ func (h *Handlers) complete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	paramURL, err := url.Parse(state.Redirect)
-	if err != nil { http.Error(w, "Internal Server Error", http.StatusBadRequest); return }
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusBadRequest)
+		return
+	}
 	siteURL, err := url.Parse(state.Redirect)
-	if err != nil { http.Error(w, "Internal Server Error", http.StatusBadRequest); return }
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusBadRequest)
+		return
+	}
 
 	// Make sure we don't send the completeState to another domain.
 	if goStrings.ToLower(paramURL.Host) != goStrings.ToLower(siteURL.Host) {

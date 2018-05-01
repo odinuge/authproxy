@@ -64,19 +64,19 @@ func DecodeState(secret []byte, stateParam string) (State, bool) {
 }
 
 type CompleteState struct {
-	Redirect    string `json:"redirect"`
-	AccessToken string `json:"accessToken"`
+	Redirect string `json:"redirect"`
+	UserID   string `json:"userId"`
 }
 
-func EncryptCompleteState(secret []byte, redirect, accessToken string) (string, error) {
+func EncryptCompleteState(secret []byte, redirect, userID string) (string, error) {
 	block, err := aes.NewCipher(secret)
 	if err != nil {
 		panic(err)
 	}
 
 	state := CompleteState{
-		Redirect:    redirect,
-		AccessToken: accessToken,
+		Redirect: redirect,
+		UserID:   userID,
 	}
 
 	j, _ := json.Marshal(state)
